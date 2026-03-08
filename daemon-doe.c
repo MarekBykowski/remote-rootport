@@ -11,7 +11,12 @@
 
 #include <linux/pci-doe.h>
 
-#define DEV_PATH "/dev/avery_doe_chardev"
+#define MINOR 0
+
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
+#define DEV_PATH "/dev/avery_doe_chardev" STR(MINOR)
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 5555
 
@@ -93,7 +98,6 @@ int main(void)
     pfd.events = POLLIN;
 
     while (1) {
-
         int ret = poll(&pfd, 1, -1);
         if (ret < 0) {
             perror("poll");

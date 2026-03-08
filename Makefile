@@ -29,7 +29,7 @@ source_files:
 	@echo $(SRC)
 
 secure-copy:
-	scp cxl_app qr:/home/root
+	scp $(APP) qr:/home/root
 
 %.o: %.c
 	$(call check_defined, SRC)
