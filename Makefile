@@ -28,8 +28,8 @@ all: $(APP)
 source_files:
 	@echo $(SRC)
 
-secure-copy:
-	scp $(APP) qr:/home/root
+scp:
+	scp $(APP) run.sh qr:/home/root
 
 %.o: %.c
 	$(call check_defined, SRC)
