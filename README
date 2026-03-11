@@ -1,0 +1,36 @@
+See how to make kernel headers available to user-space
+
+https://github.com/MarekBykowski/readme/wiki/kernel-headers-for-svc
+
+eg.
+
+* From app dir:
+```
+rm -rf include_b
+mkdir include_b
+```
+
+* From kernel dir:
+```
+make headers_install ARCH=x86 INSTALL_HDR_PATH=/home/mbykowsx/repos/remote-root-complex-emulator/include_b
+```
+
+* Test
+
+Makefile:
+```
+I./include_b/include
+make
+```
+
+If all is good swap `include` with `include_b/include`.
+```
+rm -rf include
+mv include_b/include .
+```
+
+Makefile:
+```
+I./include
+make
+```

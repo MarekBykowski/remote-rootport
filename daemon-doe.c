@@ -9,7 +9,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
-#include <linux/pci-doe.h>
+#include <linux/avery_doe.h>
 
 #define MINOR 0
 

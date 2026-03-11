@@ -10,13 +10,14 @@ __check_defined = \
 #	$(call check_defined, SRC)
 
 CC=gcc
-CFLAGS=-g -Wall -I./include -I./include_wa_kernel_headers
+#CFLAGS=-g -Wall -I./include_b/include -I./include_wa_kernel_headers
+CFLAGS=-g -Wall -I./include
 PKG=pkg-config --cflags --libs glib-2.0
 
-SRC=remote-rc.c daemon-doe.c
+SRC=remote-rc.c daemon-doe.c daemon-doe-netlink.c
 OBJ=$(SRC:.c=.o)
 #APP=$(patsubst %.c,%,$(SRC))
-APP=remote-rc daemon-doe
+APP=remote-rc daemon-doe daemon-doe-netlink
 
 #$@ - output file/target
 #$< - takes only the first item on the dependencies list
@@ -28,7 +29,7 @@ all: $(APP)
 source_files:
 	@echo $(SRC)
 
-scp:
+scp: $(APP)
 	scp $(APP) run.sh qr:/home/root
 
 %.o: %.c

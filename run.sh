@@ -4,11 +4,37 @@ echo "Redirect DOE to Remote RC"
 echo 1 > /proc/avery_doe_redirect
 cat /proc/avery_doe_redirect
 
-echo "Start Remote RC and daemon"
 ./remote-rc &
 rc_pid=$!
-./daemon-doe &
+
+echo "Start Remote RC and daemon"
+if [[ $1 == netlink ]]; then
+	echo "Using netlink"
+	echo netlink > /proc/avery_doe_backend
+	cat /proc/avery_doe_backend
+	./daemon-doe-netlink-fixed &
+else
+	echo "Using chardev"
+	echo chardev > /proc/avery_doe_backend
+	cat /proc/avery_doe_backend
+	./daemon-doe &
+fi
 daemon_pid=$!
+
+#Make cleanup reliable if the script crashes
+trap "kill $rc_pid $daemon_pid 2>/dev/null" EXIT
+
+echo "Waiting for daemon to connect to remote RC..."
+: << 'EOM'
+Example real /proc/net/tcp line
+sl  local_address rem_address   st
+0:  0100007F:15B3 0100007F:8A42  01
+where
+0x0100007F is 127.0.0.1
+0x15B3 is 5555
+EOM
+until grep -q ":15B3 .* 01 " /proc/net/tcp; do sleep 0.2; done
+#until ss -nt | grep 5555 >/dev/null; do sleep 0.2; done
 
 sleep 1
 
@@ -21,5 +47,7 @@ sleep 1
 echo "Rescan PCI bus"
 echo 1 > /sys/bus/pci/rescan
 
+echo "Stopping processes"
 kill $rc_pid $daemon_pid
+
 echo "Done"

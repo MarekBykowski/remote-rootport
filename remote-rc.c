@@ -5,8 +5,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <linux/pci-doe.h>
 #include <linux/pci_regs.h>
+
+#include <linux/avery_doe.h>
 
 #define PORT 5555
 
