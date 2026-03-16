@@ -30,7 +30,7 @@ source_files:
 	@echo $(SRC)
 
 scp: $(APP)
-	scp $(APP) run.sh qr:/home/root
+	scp $(APP) run.sh trace.sh qr:/home/root
 
 %.o: %.c
 	$(call check_defined, SRC)
