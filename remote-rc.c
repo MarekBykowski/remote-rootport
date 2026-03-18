@@ -67,7 +67,7 @@ int main(void)
 
         /* emulate behavior */
         if (op.type == PCI_DOE_READ) {
-            op.value = 0xCAFEBABE;
+            op.value = 0xdeadbeef;
         }
 
         op.status = 0;
