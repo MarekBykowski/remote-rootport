@@ -14,10 +14,10 @@ CC=gcc
 CFLAGS=-g -Wall -I./include
 PKG=pkg-config --cflags --libs glib-2.0
 
-SRC=remote-rc.c daemon-doe.c daemon-doe-netlink.c
+SRC=remote-rc.c daemon-doe.c daemon-doe-netlink.c thin-server.c doe-emu.c
 OBJ=$(SRC:.c=.o)
 #APP=$(patsubst %.c,%,$(SRC))
-APP=remote-rc daemon-doe daemon-doe-netlink
+APP=remote-rc daemon-doe daemon-doe-netlink thin-server doe-emu
 
 #$@ - output file/target
 #$< - takes only the first item on the dependencies list
@@ -40,6 +40,12 @@ remote-rc: remote-rc.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 daemon-doe: daemon-doe.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+thin-server: thin-server.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+doe-emu: doe-emu.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 clean:

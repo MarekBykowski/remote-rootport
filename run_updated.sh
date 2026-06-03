@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# DOE relay path for named pipes shared between thin-server and doe-emu
+PIPE_DIR="${CXL_RELAY_SERVER_PATH:-/tmp/cxl_relay_pipes}"
+
 run_redirect() {
 	# Fix interpreter for linux-cxl-apps
 	# Reason behind: I build these apps using a different toolchain.
@@ -11,10 +14,16 @@ run_redirect() {
 	echo 1 > /proc/avery_doe_redirect
 	cat /proc/avery_doe_redirect
 
-	./remote-rc &
-	rc_pid=$!
+	echo "Start doe-emu (replaces simv / remote root port)"
+	mkdir -p "$PIPE_DIR"
+	CXL_RELAY_SERVER_PATH="$PIPE_DIR" ./doe-emu &
+	doe_emu_pid=$!
 
-	echo "Start Remote RC and daemon"
+	echo "Start thin-server (bridges daemon-doe TCP to doe-emu named pipes)"
+	CXL_RELAY_SERVER_PATH="$PIPE_DIR" ./thin-server &
+	thin_server_pid=$!
+
+	echo "Start daemon"
 	if [[ $1 == netlink ]]; then
 		echo "Using netlink"
 		echo netlink > /proc/avery_doe_backend
@@ -28,10 +37,10 @@ run_redirect() {
 	fi
 	daemon_pid=$!
 
-	#Make cleanup reliable if the script crashes
-	trap "kill $rc_pid $daemon_pid 2>/dev/null" EXIT
+	# Make cleanup reliable if the script crashes
+	trap "kill $doe_emu_pid $thin_server_pid $daemon_pid 2>/dev/null" EXIT
 
-	echo "Waiting for daemon to connect to remote RC..."
+	echo "Waiting for daemon to connect to thin-server..."
 : << 'EOM'
 	Example real /proc/net/tcp line
 	sl  local_address rem_address   st
@@ -41,7 +50,6 @@ run_redirect() {
 	0x15B3 is 5555
 EOM
 	until grep -q ":15B3 .* 01 " /proc/net/tcp; do sleep 0.2; done
-	#until ss -nt | grep 5555 >/dev/null; do sleep 0.2; done
 
 	sleep 1
 
@@ -55,14 +63,14 @@ EOM
 	echo 1 > /sys/bus/pci/rescan
 
 	echo "Stopping processes"
-	kill $rc_pid $daemon_pid
+	kill $doe_emu_pid $thin_server_pid $daemon_pid
 
 	echo "Done"
 }
 
 
 if [[ $1 == native ]]; then
-	echo "Remove netive rootport"
+	echo "Remove native rootport"
 	DEV="0000:00:04.0"
 	echo 1 > /sys/bus/pci/devices/${DEV}/remove
 	sleep 1

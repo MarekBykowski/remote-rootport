@@ -19,7 +19,7 @@ make headers_install ARCH=x86 INSTALL_HDR_PATH=/home/mbykowsx/repos/remote-root-
 
 Makefile:
 ```
-I./include_b/include
+-I./include_b/include
 make
 ```
 
@@ -31,6 +31,6 @@ mv include_b/include .
 
 Makefile:
 ```
-I./include
+-I./include
 make
 ```
