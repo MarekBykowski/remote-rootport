@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 
 #include <linux/avery_doe.h>
+#include "log.h"
 
 #define MINOR 0
 
@@ -45,7 +46,7 @@ static int connect_remote(void)
         exit(1);
     }
 
-    printf("Connected to remote RC %s:%d\n", SERVER_IP, SERVER_PORT);
+    LOG("Connected to remote RC %s:%d", SERVER_IP, SERVER_PORT);
     return sock;
 }
 
@@ -84,15 +85,18 @@ int main(void)
     struct pollfd pfd;
     struct avery_pci_config_op op;
 
+    log_init(getenv("CXL_LOG_FILE"));
+
     devfd = open(DEV_PATH, O_RDWR);
     if (devfd < 0) {
         perror("open char dev");
+        log_close();
         return 1;
     }
 
     sockfd = connect_remote();
 
-    printf("Daemon started\n");
+    LOG("Daemon started");
 
     pfd.fd = devfd;
     pfd.events = POLLIN;
@@ -112,8 +116,8 @@ int main(void)
                 break;
             }
 
-            printf("REQ: type=%d offset=0x%x value=0x%x\n",
-                   op.type, op.offset, op.value);
+            LOG("REQ: type=%d offset=0x%x value=0x%x",
+                op.type, op.offset, op.value);
 
             /* send request to remote emulator */
             send_all(sockfd, &op, sizeof(op));
@@ -121,8 +125,8 @@ int main(void)
             /* receive response */
             recv_all(sockfd, &op, sizeof(op));
 
-            printf("RESP: status=%d value=0x%x\n",
-                   op.status, op.value);
+            LOG("RESP: status=%d value=0x%x",
+                op.status, op.value);
 
             if (write(devfd, &op, sizeof(op)) < 0) {
                 perror("write");
@@ -133,6 +137,7 @@ int main(void)
 
     close(sockfd);
     close(devfd);
+    log_close();
     return 0;
 }
 

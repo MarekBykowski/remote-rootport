@@ -24,6 +24,7 @@
 #include <errno.h>
 
 #include <linux/avery_doe.h>
+#include "log.h"
 
 #define SERVER_PORT   5555
 #define PIPE_PATH_ENV "CXL_RELAY_SERVER_PATH"
@@ -81,7 +82,7 @@ static int open_pipes(const char *path)
     rep_fd = open(rep, O_RDWR);
     if (rep_fd < 0) { perror("open reply_server_pipe"); return -1; }
 
-    printf("thin-server: pipes opened: %s\n", path);
+    LOG("thin-server: pipes opened: %s", path);
     return 0;
 }
 
@@ -133,8 +134,8 @@ static void serve(int client)
     while (1) {
         xrecv(client, &op, sizeof(op));
 
-        printf("REQ  type=%d offset=0x%x value=0x%x\n",
-               op.type, op.offset, op.value);
+        LOG("REQ  type=%d offset=0x%x value=0x%x",
+            op.type, op.offset, op.value);
 
         memset(&req, 0, sizeof(req));
         req.packet_number    = ++seq;
@@ -151,7 +152,7 @@ static void serve(int client)
         op.status = (int32_t)rsp.cmp_status;
         memcpy(&op.value, rsp.data, 4);
 
-        printf("RSP  status=%d value=0x%x\n", op.status, op.value);
+        LOG("RSP  status=%d value=0x%x", op.status, op.value);
 
         xsend(client, &op, sizeof(op));
     }
@@ -159,14 +160,19 @@ static void serve(int client)
 
 int main(void)
 {
+    log_init(getenv("CXL_LOG_FILE"));
+
     const char *pipe_path = getenv(PIPE_PATH_ENV);
     if (!pipe_path) {
         fprintf(stderr, "thin-server: %s not set\n", PIPE_PATH_ENV);
+        log_close();
         return 1;
     }
 
-    if (open_pipes(pipe_path) < 0)
+    if (open_pipes(pipe_path) < 0) {
+        log_close();
         return 1;
+    }
 
     int srv = socket(AF_INET, SOCK_STREAM, 0);
     int opt = 1;
@@ -182,11 +188,11 @@ int main(void)
         perror("bind"); return 1;
     }
     listen(srv, 1);
-    printf("thin-server: listening on :%d\n", SERVER_PORT);
+    LOG("thin-server: listening on :%d", SERVER_PORT);
 
     int client = accept(srv, NULL, NULL);
     if (client < 0) { perror("accept"); return 1; }
-    printf("thin-server: daemon-doe connected\n");
+    LOG("thin-server: daemon-doe connected");
 
     serve(client);
 
@@ -194,5 +200,6 @@ int main(void)
     close(srv);
     close(req_fd);
     close(rep_fd);
+    log_close();
     return 0;
 }

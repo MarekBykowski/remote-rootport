@@ -1,7 +1,7 @@
 #!/bin/bash
 
 run_redirect() {
-	# Fix interpreter for linux-cxl-apps
+	# Fix interpreter on the target
 	# Reason behind: I build these apps using a different toolchain.
 	# If I used Yocto toolchain all would work just fine.
 	echo "Fix interpreter"

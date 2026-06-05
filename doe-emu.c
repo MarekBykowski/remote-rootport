@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include "log.h"
 
 #define PIPE_PATH_ENV  "CXL_RELAY_SERVER_PATH"
 #define MAX_PAYLOAD    256
@@ -113,7 +114,7 @@ static void doe_handle_discovery(void)
     uint32_t index = doe.req_buf[2] & 0xFF;
     uint32_t next  = (index + 1 < NUM_PROTOCOLS) ? index + 1 : 0;
 
-    printf("doe-emu: discovery index=%u\n", index);
+    LOG("doe-emu: discovery index=%u", index);
 
     doe.rsp_buf[0] = DOE_VID_PCISIG | ((uint32_t)DOE_TYPE_DISC << 16);
     doe.rsp_buf[1] = 4;  /* length in DWORDs */
@@ -122,12 +123,12 @@ static void doe_handle_discovery(void)
         doe.rsp_buf[2] = protocols[index].vid |
                          ((uint32_t)protocols[index].type << 16);
         doe.rsp_buf[3] = next;
-        printf("doe-emu: → VID=0x%04x Type=0x%02x next=%u\n",
-               protocols[index].vid, protocols[index].type, next);
+        LOG("doe-emu: → VID=0x%04x Type=0x%02x next=%u",
+            protocols[index].vid, protocols[index].type, next);
     } else {
         doe.rsp_buf[2] = 0;
         doe.rsp_buf[3] = 0;
-        printf("doe-emu: → end of list\n");
+        LOG("doe-emu: → end of list");
     }
 
     doe.rsp_len = 4;
@@ -138,7 +139,7 @@ static void doe_handle_discovery(void)
 static void doe_process(void)
 {
     if (doe.req_len < 2) {
-        printf("doe-emu: malformed request (len=%d)\n", doe.req_len);
+        LOG("doe-emu: malformed request (len=%d)", doe.req_len);
         doe.status = DOE_STATUS_ERROR;
         return;
     }
@@ -146,12 +147,12 @@ static void doe_process(void)
     uint16_t vid  = doe.req_buf[0] & 0xFFFF;
     uint8_t  type = (doe.req_buf[0] >> 16) & 0xFF;
 
-    printf("doe-emu: processing VID=0x%04x Type=0x%02x\n", vid, type);
+    LOG("doe-emu: processing VID=0x%04x Type=0x%02x", vid, type);
 
     if (vid == DOE_VID_PCISIG && type == DOE_TYPE_DISC) {
         doe_handle_discovery();
     } else {
-        printf("doe-emu: unsupported protocol\n");
+        LOG("doe-emu: unsupported protocol");
         doe.status = DOE_STATUS_ERROR;
     }
 }
@@ -164,20 +165,20 @@ static uint32_t reg_read(uint32_t reg)
 {
     switch (reg) {
     case DOE_REG_STATUS:
-        printf("doe-emu: STATUS → 0x%08x\n", doe.status);
+        LOG("doe-emu: STATUS → 0x%08x", doe.status);
         return doe.status;
 
     case DOE_REG_READ:
         if (doe.rsp_idx >= doe.rsp_len) {
-            printf("doe-emu: READ overrun\n");
+            LOG("doe-emu: READ overrun");
             return 0xFFFFFFFF;
         }
-        printf("doe-emu: READ[%d] → 0x%08x\n",
-               doe.rsp_idx, doe.rsp_buf[doe.rsp_idx]);
+        LOG("doe-emu: READ[%d] → 0x%08x",
+            doe.rsp_idx, doe.rsp_buf[doe.rsp_idx]);
         return doe.rsp_buf[doe.rsp_idx];
 
     default:
-        printf("doe-emu: unhandled read reg=0x%02x\n", reg);
+        LOG("doe-emu: unhandled read reg=0x%02x", reg);
         return 0;
     }
 }
@@ -186,21 +187,21 @@ static void reg_write(uint32_t reg, uint32_t val)
 {
     switch (reg) {
     case DOE_REG_CTRL:
-        printf("doe-emu: CTRL ← 0x%08x\n", val);
+        LOG("doe-emu: CTRL ← 0x%08x", val);
         if (val & DOE_CTRL_ABORT) {
-            printf("doe-emu: ABORT\n");
+            LOG("doe-emu: ABORT");
             doe.req_len = doe.rsp_len = doe.rsp_idx = 0;
             doe.status  = 0;
         }
         if (val & DOE_CTRL_GO) {
-            printf("doe-emu: GO\n");
+            LOG("doe-emu: GO");
             doe_process();
             doe.req_len = 0;
         }
         break;
 
     case DOE_REG_WRITE:
-        printf("doe-emu: WRITE[%d] ← 0x%08x\n", doe.req_len, val);
+        LOG("doe-emu: WRITE[%d] ← 0x%08x", doe.req_len, val);
         if (doe.req_len < DOE_BUF_DWORDS)
             doe.req_buf[doe.req_len++] = val;
         break;
@@ -209,17 +210,17 @@ static void reg_write(uint32_t reg, uint32_t val)
         /* host writes 0 to ack each DWORD and advance pointer */
         if (val == 0) {
             doe.rsp_idx++;
-            printf("doe-emu: READ ack → %d/%d\n", doe.rsp_idx, doe.rsp_len);
+            LOG("doe-emu: READ ack → %d/%d", doe.rsp_idx, doe.rsp_len);
             if (doe.rsp_idx >= doe.rsp_len) {
                 doe.status  = 0;
                 doe.rsp_idx = doe.rsp_len = 0;
-                printf("doe-emu: response consumed\n");
+                LOG("doe-emu: response consumed");
             }
         }
         break;
 
     default:
-        printf("doe-emu: unhandled write reg=0x%02x val=0x%08x\n", reg, val);
+        LOG("doe-emu: unhandled write reg=0x%02x val=0x%08x", reg, val);
         break;
     }
 }
@@ -234,16 +235,13 @@ static int open_pipes(const char *path)
     snprintf(req, sizeof(req), "%s/request_server_pipe", path);
     snprintf(rep, sizeof(rep), "%s/reply_server_pipe",   path);
 
-    mkfifo(req, 0777);
-    mkfifo(rep, 0777);
-
     req_fd = open(req, O_RDWR);
     if (req_fd < 0) { perror("open request_server_pipe"); return -1; }
 
     rep_fd = open(rep, O_RDWR);
     if (rep_fd < 0) { perror("open reply_server_pipe");   return -1; }
 
-    printf("doe-emu: pipes opened (%s)\n", path);
+    LOG("doe-emu: pipes opened (%s)", path);
     return 0;
 }
 
@@ -279,20 +277,28 @@ static void run(void)
         xread(req_fd, &req, sizeof(req));
 
         if (req.control_status & 0x1) {  /* QUIT_SIM_MASK */
-            printf("doe-emu: quit received\n");
+            LOG("doe-emu: quit received");
             break;
         }
 
         uint32_t offset = (uint32_t)req.physical_address;
 
-        /* auto-detect DOE cap base from first access */
+        /* detect cap_base from first STATUS read; ignore writes until then */
         if (!doe.cap_detected) {
-            if (req.r0w1 == 0)
-                doe.cap_base = offset - DOE_REG_STATUS;  /* first read = STATUS */
-            else
-                doe.cap_base = offset - DOE_REG_WRITE;   /* first write = WRITE mailbox */
+            if (req.r0w1 == 1) {
+                /* kernel may write CTRL (ABORT) before first STATUS read — skip */
+                memset(&rsp, 0, sizeof(rsp));
+                rsp.packet_number = req.packet_number;
+                rsp.packet_type   = req.packet_type;
+                rsp.sim_type      = req.sim_type;
+                rsp.data_size     = 4;
+                rsp.r0w1          = req.r0w1;
+                xwrite(rep_fd, &rsp, sizeof(rsp));
+                continue;
+            }
+            doe.cap_base    = offset - DOE_REG_STATUS;
             doe.cap_detected = 1;
-            printf("doe-emu: cap_base=0x%x (auto-detected)\n", doe.cap_base);
+            LOG("doe-emu: cap_base=0x%x (auto-detected)", doe.cap_base);
         }
 
         uint32_t reg = offset - doe.cap_base;
@@ -320,21 +326,27 @@ static void run(void)
 
 int main(void)
 {
+    log_init(getenv("CXL_LOG_FILE"));
+
     const char *path = getenv(PIPE_PATH_ENV);
     if (!path) {
         fprintf(stderr, "doe-emu: %s not set\n", PIPE_PATH_ENV);
+        log_close();
         return 1;
     }
 
     memset(&doe, 0, sizeof(doe));
 
-    if (open_pipes(path) < 0)
+    if (open_pipes(path) < 0) {
+        log_close();
         return 1;
+    }
 
-    printf("doe-emu: ready\n");
+    LOG("doe-emu: ready");
     run();
 
     close(req_fd);
     close(rep_fd);
+    log_close();
     return 0;
 }

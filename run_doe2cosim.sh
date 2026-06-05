@@ -2,6 +2,7 @@
 
 # DOE relay path for named pipes shared between thin-server and doe-emu
 PIPE_DIR="${CXL_RELAY_SERVER_PATH:-/tmp/cxl_relay_pipes}"
+LOG_DIR="/var/log/doe2cosim"
 
 run_redirect() {
 	# Fix interpreter for linux-cxl-apps
@@ -14,16 +15,22 @@ run_redirect() {
 	echo 1 > /proc/avery_doe_redirect
 	cat /proc/avery_doe_redirect
 
-	echo "Start doe-emu (replaces simv / remote root port)"
+	mkdir -p "$LOG_DIR"
 	mkdir -p "$PIPE_DIR"
-	CXL_RELAY_SERVER_PATH="$PIPE_DIR" ./doe-emu &
-	doe_emu_pid=$!
+	export CXL_RELAY_SERVER_PATH="$PIPE_DIR"
 
-	echo "Start thin-server (bridges daemon-doe TCP to doe-emu named pipes)"
-	CXL_RELAY_SERVER_PATH="$PIPE_DIR" ./thin-server &
+	echo "Start thin-server (creates named pipes, bridges daemon-doe TCP to doe-emu)"
+	export CXL_LOG_FILE="$LOG_DIR/thin_server.log"
+	./thin-server &
 	thin_server_pid=$!
 
+	echo "Start doe-emu (opens named pipes, replaces simv / remote root port)"
+	export CXL_LOG_FILE="$LOG_DIR/doe_emu.log"
+	./doe-emu &
+	doe_emu_pid=$!
+
 	echo "Start daemon"
+	export CXL_LOG_FILE="$LOG_DIR/daemon.log"
 	if [[ $1 == netlink ]]; then
 		echo "Using netlink"
 		echo netlink > /proc/avery_doe_backend

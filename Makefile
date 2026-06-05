@@ -30,7 +30,12 @@ source_files:
 	@echo $(SRC)
 
 scp: $(APP)
-	scp $(APP) run.sh trace.sh qr:/home/root
+	@ssh -F .ssh_config qr echo qemu reachable
+	scp -F .ssh_config $(APP) run_doe2cosim.sh trace.sh qr:/home/root
+
+cl:
+	mkdir -p logs
+	scp -F .ssh_config qr:/var/log/doe2cosim/* logs
 
 %.o: %.c
 	$(call check_defined, SRC)
