@@ -76,7 +76,14 @@ EOM
 }
 
 
-if [[ $1 == native ]]; then
+if [[ $1 == -h || $1 == --help || -z $1 ]]; then
+	echo "Usage: $0 native | redirect <netlink|chardev>"
+	echo ""
+	echo "  native               remove native rootport and rescan PCI bus"
+	echo "  redirect netlink     redirect DOE via netlink backend to doe-emu"
+	echo "  redirect chardev     redirect DOE via chardev backend to doe-emu"
+	exit 0
+elif [[ $1 == native ]]; then
 	echo "Remove native rootport"
 	DEV="0000:00:04.0"
 	echo 1 > /sys/bus/pci/devices/${DEV}/remove
