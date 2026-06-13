@@ -42,6 +42,10 @@ run_redirect() {
 		echo "Stopping processes"
 		kill $doe_emu_pid $thin_server_pid $daemon_pid 2>/dev/null
 		wait $doe_emu_pid $thin_server_pid $daemon_pid 2>/dev/null
+		if [[ $mechanism == chardev ]]; then
+			echo "Removing DOE redirect"
+			echo 0 > /proc/avery_doe_redirect
+		fi
 		echo "Done"
 	}
 	trap cleanup EXIT INT TERM
