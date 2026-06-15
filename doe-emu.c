@@ -24,10 +24,12 @@
 #include <sys/stat.h>
 
 #include <openssl/evp.h>
-#include <openssl/rsa.h>
+#include <openssl/ec.h>
+#include <openssl/ecdsa.h>
 #include <openssl/x509.h>
 #include <openssl/sha.h>
 #include <openssl/err.h>
+#include <openssl/bn.h>
 
 #include "log.h"
 
@@ -86,8 +88,8 @@
 #define SPDM_CAP_MEAS_SIG   (2u << 3)   /* measurements with signing */
 
 /* SPDM algorithm selectors */
-#define SPDM_ASYM_RSA2048   (1u << 1)
-#define SPDM_HASH_SHA256    (1u << 0)
+#define SPDM_ASYM_ECDSA_P256  (1u << 4)  /* TPM_ALG_ECDSA_ECC_NIST_P256, required by TDX microcode */
+#define SPDM_HASH_SHA256      (1u << 0)
 #define SPDM_MEAS_DMTF      (1u << 0)
 
 /* simics_transaction_t — must match cxl_relay/cxl_tlp_fifo.h exactly */
@@ -191,11 +193,11 @@ static int crypto_init(void)
     uint8_t root_hash[32];
     uint16_t chain_total;
 
-    /* Generate RSA-2048 key pair */
-    kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+    /* Generate EC P-256 key pair (required by TDX microcode) */
+    kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
     if (!kctx) { LOG("doe-emu: EVP_PKEY_CTX_new_id failed"); return -1; }
     if (EVP_PKEY_keygen_init(kctx) <= 0) goto fail_kctx;
-    if (EVP_PKEY_CTX_set_rsa_keygen_bits(kctx, 2048) <= 0) goto fail_kctx;
+    if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(kctx, NID_X9_62_prime256v1) <= 0) goto fail_kctx;
     if (EVP_PKEY_keygen(kctx, &g_crypto.pkey) <= 0) goto fail_kctx;
     EVP_PKEY_CTX_free(kctx);
 
@@ -341,12 +343,11 @@ static void spdm_handle(uint8_t doe_type)
 
         rsp[0] = 0x10; rsp[1] = SPDM_RSP_VERSION;
         rsp[2] = 0;    rsp[3] = 0;
-        rsp[4] = 0;    rsp[5] = 0;
-        rsp[6] = 2;    rsp[7] = 0;
-        uint16_t *v = (uint16_t *)(rsp + 8);
+        rsp[4] = 0;    rsp[5] = 2;  /* Reserved, VersionNumberEntryCount */
+        uint16_t *v = (uint16_t *)(rsp + 6);
         v[0] = 0x1000;  /* 1.0 */
         v[1] = 0x1200;  /* 1.2 */
-        int bytes = 12;
+        int bytes = 10;
 
         transcript_append(rsp, bytes);
         spdm_finish(doe_type, bytes);
@@ -388,43 +389,57 @@ static void spdm_handle(uint8_t doe_type)
     case SPDM_NEG_ALGOS: {
         transcript_append(req, req_bytes);
 
-        uint32_t asym = SPDM_ASYM_RSA2048;
+        uint32_t asym = SPDM_ASYM_ECDSA_P256;
         uint32_t hash = SPDM_HASH_SHA256;
         uint32_t meas_hash = SPDM_HASH_SHA256;
+        uint8_t  num_req_structs = (req_bytes >= 3) ? req[2] : 0;
         uint16_t len;
         int bytes;
 
-        memset(rsp, 0, 36);
+        memset(rsp, 0, 44);
         rsp[0] = ver;
         rsp[1] = SPDM_RSP_ALGOS;
-        rsp[2] = 0;  /* NumAlgStructs */
         rsp[3] = 0;
-        rsp[6] = SPDM_MEAS_DMTF;  /* MeasurementSpecificationSel */
+        rsp[6] = SPDM_MEAS_DMTF;
 
         if (ver >= 0x11) {
-            /*
-             * SPDM 1.1+: byte 7 = OtherParamsSupport,
-             * MeasurementHashAlgo at [8..11], BaseAsymSel at [12..15],
-             * BaseHashSel at [16..19].
-             */
-            rsp[7] = 0;
+            rsp[7] = (req_bytes >= 8) ? (req[7] & 0x02) : 0;  /* OtherParamsSel: echo OpaqueDataFmt1 bit */
             memcpy(rsp +  8, &meas_hash, 4);
             memcpy(rsp + 12, &asym,      4);
             memcpy(rsp + 16, &hash,      4);
-            len   = 36;
-            bytes = 36;
+            len   = 32;
+            bytes = 32;
+
+            /*
+             * Echo AlgStructs: responder must include one selected
+             * algorithm per AlgStruct type the requester listed.
+             * Format: AlgType(1) | AlgCount=0x20(1) | AlgSupported(2)
+             * DHE=SECP_256R1(bit3), AEAD=AES-256-GCM(bit1), KeySched=SPDM(bit0)
+             */
+            if (num_req_structs > 0) {
+                rsp[2] = 3;
+                /* No KEY_EX_CAP → select 0 for DHE/AEAD/KeySchedule */
+                rsp[32] = 0x02; rsp[33] = 0x20; rsp[34] = 0x00; rsp[35] = 0x00;
+                rsp[36] = 0x03; rsp[37] = 0x20; rsp[38] = 0x00; rsp[39] = 0x00;
+                rsp[40] = 0x05; rsp[41] = 0x20; rsp[42] = 0x00; rsp[43] = 0x00;
+                len   = 44;
+                bytes = 44;
+            } else {
+                rsp[2] = 0;
+            }
         } else {
-            /* SPDM 1.0: BaseAsymSel at [8], BaseHashSel at [12] */
             memcpy(rsp +  8, &asym, 4);
             memcpy(rsp + 12, &hash, 4);
-            len   = 36;
-            bytes = 36;
+            rsp[2] = 0;
+            len   = 28;
+            bytes = 28;
         }
         memcpy(rsp + 4, &len, 2);
 
         transcript_append(rsp, bytes);
         spdm_finish(doe_type, bytes);
-        LOG("doe-emu: SPDM → ALGORITHMS asym=RSA2048 hash=SHA256 (ver=0x%02x)", ver);
+        LOG("doe-emu: SPDM → ALGORITHMS asym=ECDSA_P256 hash=SHA256 structs=%d (ver=0x%02x, %d bytes)",
+            rsp[2], ver, bytes);
         break;
     }
 
@@ -532,22 +547,37 @@ static void spdm_handle(uint8_t doe_type)
         EVP_DigestSignUpdate(mdctx, g_transcript, g_transcript_len);
         EVP_DigestSignUpdate(mdctx, rsp, pos);
 
-        size_t siglen = 256;
-        uint8_t sig[256];
-        if (EVP_DigestSignFinal(mdctx, sig, &siglen) <= 0) {
+        /* Get DER-encoded ECDSA signature, then extract raw (R || S) */
+        size_t der_len = 0;
+        EVP_DigestSignFinal(mdctx, NULL, &der_len);
+        uint8_t *der = malloc(der_len);
+        if (!der || EVP_DigestSignFinal(mdctx, der, &der_len) <= 0) {
             LOG("doe-emu: CHALLENGE sign final failed");
+            free(der);
             EVP_MD_CTX_free(mdctx);
             spdm_error(doe_type, SPDM_ERR_UNSUP);
             break;
         }
         EVP_MD_CTX_free(mdctx);
 
-        memcpy(rsp + pos, sig, siglen);
-        pos += (int)siglen;
+        /* Convert DER ECDSA sig → raw (R || S), 32 bytes each for P-256 */
+        const unsigned char *dp = der;
+        ECDSA_SIG *esig = d2i_ECDSA_SIG(NULL, &dp, (long)der_len);
+        free(der);
+        if (!esig) {
+            LOG("doe-emu: CHALLENGE d2i_ECDSA_SIG failed");
+            spdm_error(doe_type, SPDM_ERR_UNSUP);
+            break;
+        }
+        const BIGNUM *r, *s;
+        ECDSA_SIG_get0(esig, &r, &s);
+        BN_bn2binpad(r, rsp + pos,      32);
+        BN_bn2binpad(s, rsp + pos + 32, 32);
+        ECDSA_SIG_free(esig);
+        pos += 64;  /* ECDSA P-256: R(32) + S(32) */
 
         spdm_finish(doe_type, pos);
-        LOG("doe-emu: SPDM → CHALLENGE_AUTH (signed, siglen=%zu, total=%d bytes)",
-            siglen, pos);
+        LOG("doe-emu: SPDM → CHALLENGE_AUTH (ECDSA P-256, total=%d bytes)", pos);
         break;
     }
 
