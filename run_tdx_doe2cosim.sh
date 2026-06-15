@@ -55,12 +55,12 @@ run_redirect() {
 }
 
 
-if [[ $1 == -h || $1 == --help || -z $1 ]]; then
-	echo "Usage: $0 native | redirect <netlink|chardev>"
+if [[ $1 == -h || $1 == --help ]]; then
+	echo "Usage: $0 [native|netlink]"
 	echo ""
-	echo "  native               remove native rootport and rescan PCI bus"
-	echo "  redirect netlink     redirect DOE via netlink backend to doe-emu"
-	echo "  redirect chardev     redirect DOE via chardev backend to doe-emu"
+	echo "  (no args)   redirect DOE via chardev backend to doe-emu (default)"
+	echo "  netlink     redirect DOE via netlink backend to doe-emu"
+	echo "  native      remove native rootport and rescan PCI bus"
 	exit 0
 elif [[ $1 == native ]]; then
 	echo "Remove native rootport"
@@ -69,7 +69,8 @@ elif [[ $1 == native ]]; then
 	sleep 1
 	echo "Rescan PCI bus"
 	echo 1 > /sys/bus/pci/rescan
-elif [[ $1 == redirect ]]; then
-	mechanism=$2
+else
+	# use $1 if set and non-empty, otherwise use chardev
+	mechanism=${1:-chardev}
 	run_redirect $mechanism
 fi
