@@ -51,7 +51,7 @@ thin-server: thin-server.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 doe-emu: doe-emu.o
-	$(CC) -o $@ $^ $(LDFLAGS)
+	$(CC) -o $@ $^ $(LDFLAGS) -lssl -lcrypto
 
 clean:
 	rm -f *.o *.a $(APP)
