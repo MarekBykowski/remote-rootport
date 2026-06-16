@@ -27,6 +27,7 @@
 #include <openssl/ec.h>
 #include <openssl/ecdsa.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 #include <openssl/sha.h>
 #include <openssl/err.h>
 #include <openssl/bn.h>
@@ -81,15 +82,22 @@
 
 /*
  * SPDM 1.2 Capabilities flags (DSP0274 Table 12)
- * Bit 1: CERT_CAP, Bit 2: CHAL_CAP, Bits 3-4: MEAS_CAP
+ * Bit 1: CERT_CAP, Bit 2: CHAL_CAP, Bit 6: ENCRYPT_CAP, Bit 7: MAC_CAP,
+ * Bit 9: KEY_EX_CAP, Bits 3-4: MEAS_CAP
  */
 #define SPDM_CAP_CERT       (1u << 1)
 #define SPDM_CAP_CHAL       (1u << 2)
 #define SPDM_CAP_MEAS_SIG   (2u << 3)   /* measurements with signing */
+#define SPDM_CAP_ENCRYPT    (1u << 6)
+#define SPDM_CAP_MAC        (1u << 7)
+#define SPDM_CAP_KEY_EX     (1u << 9)
 
 /* SPDM algorithm selectors */
-#define SPDM_ASYM_ECDSA_P256  (1u << 4)  /* TPM_ALG_ECDSA_ECC_NIST_P256, required by TDX microcode */
-#define SPDM_HASH_SHA256      (1u << 0)
+#define SPDM_ASYM_ECDSA_P384  (1u << 7)  /* TPM_ALG_ECDSA_ECC_NIST_P384 */
+#define SPDM_HASH_SHA384      (1u << 1)
+#define SPDM_DHE_SECP384R1    (1u << 4)
+#define SPDM_AEAD_AES_256_GCM (1u << 1)
+#define SPDM_KEY_SCHED_SPDM   (1u << 0)
 #define SPDM_MEAS_DMTF      (1u << 0)
 
 /* simics_transaction_t — must match cxl_relay/cxl_tlp_fifo.h exactly */
@@ -154,7 +162,7 @@ static struct {
     EVP_PKEY *pkey;
     uint8_t   chain[CHAIN_MAX];
     size_t    chain_len;
-    uint8_t   chain_hash[32];  /* SHA-256 of the CertChain structure */
+    uint8_t   chain_hash[48];  /* SHA-384 of the CertChain structure (matches BaseHashSel) */
 } g_crypto;
 
 /*
@@ -190,14 +198,14 @@ static int crypto_init(void)
     unsigned char *p;
     int dlen;
     uint8_t cert_der[4096];
-    uint8_t root_hash[32];
+    uint8_t root_hash[48];
     uint16_t chain_total;
 
-    /* Generate EC P-256 key pair (required by TDX microcode) */
+    /* Generate EC P-384 key pair (matches BaseAsymSel=ECDSA_P384 / DHE=secp384r1) */
     kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
     if (!kctx) { LOG("doe-emu: EVP_PKEY_CTX_new_id failed"); return -1; }
     if (EVP_PKEY_keygen_init(kctx) <= 0) goto fail_kctx;
-    if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(kctx, NID_X9_62_prime256v1) <= 0) goto fail_kctx;
+    if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(kctx, NID_secp384r1) <= 0) goto fail_kctx;
     if (EVP_PKEY_keygen(kctx, &g_crypto.pkey) <= 0) goto fail_kctx;
     EVP_PKEY_CTX_free(kctx);
 
@@ -213,7 +221,42 @@ static int crypto_init(void)
     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
                                (unsigned char *)"doe-emu", -1, -1, 0);
     X509_set_issuer_name(cert, name);
-    if (!X509_sign(cert, g_crypto.pkey, EVP_sha256())) {
+
+    /*
+     * webpki validates this single self-signed cert both as the trust
+     * anchor (via TrustAnchor::try_from_cert_der, which doesn't check
+     * BasicConstraints) and as the end-entity leaf via build_chain()'s
+     * check_basic_constraints(), which explicitly REJECTS the leaf with
+     * Error::CaUsedAsEndEntity if BasicConstraints CA:TRUE is set
+     * (confirmed via webpki 0.22.4 source, the version this firmware's
+     * spdm-rs v0.4.1 actually pins). So: no BasicConstraints extension,
+     * and KeyUsage must not claim keyCertSign since this cert is never
+     * used to sign another cert in this chain.
+     */
+    {
+        X509V3_CTX ctx;
+        X509_EXTENSION *ext;
+
+        X509V3_set_ctx(&ctx, cert, cert, NULL, NULL, 0);
+
+        ext = X509V3_EXT_conf_nid(NULL, &ctx, NID_key_usage,
+                                   "critical,digitalSignature");
+        if (ext) { X509_add_ext(cert, ext, -1); X509_EXTENSION_free(ext); }
+
+        /*
+         * The deployed TPA firmware (spdm-rs v0.4.1, confirmed via binary
+         * strings match) calls webpki's verify_cert_chain_with_eku() with
+         * EKU_SPDM_RESPONDER_AUTH = OID 1.3.6.1.5.5.7.3.1 (id-kp-serverAuth).
+         * That old webpki API has no "EKU absent -> pass" exception (that
+         * was added later upstream) — the leaf cert MUST carry this EKU or
+         * verification fails outright.
+         */
+        ext = X509V3_EXT_conf_nid(NULL, &ctx, NID_ext_key_usage,
+                                   "serverAuth");
+        if (ext) { X509_add_ext(cert, ext, -1); X509_EXTENSION_free(ext); }
+    }
+
+    if (!X509_sign(cert, g_crypto.pkey, EVP_sha384())) {
         LOG("doe-emu: X509_sign failed");
         X509_free(cert);
         return -1;
@@ -223,27 +266,30 @@ static int crypto_init(void)
     p = cert_der;
     dlen = i2d_X509(cert, &p);
     X509_free(cert);
-    if (dlen <= 0 || (size_t)(dlen + 36) > CHAIN_MAX) {
+    if (dlen <= 0 || (size_t)(dlen + 52) > CHAIN_MAX) {
         LOG("doe-emu: cert DER too large: %d", dlen);
         return -1;
     }
 
     /*
      * Build SPDM CertChain:
-     *   [Length(2)] [Reserved(2)] [RootHash(32)] [CertDER...]
-     * RootHash = SHA-256 of the root cert DER (self-signed: same cert).
+     *   [Length(2)] [Reserved(2)] [RootHash(48)] [CertDER...]
+     * RootHash size/algorithm must match the negotiated BaseHashAlgo
+     * (SHA-384 here), not a fixed SHA-256 — the requester recomputes
+     * this hash with the negotiated algorithm and compares it.
+     * RootHash = SHA-384 of the root cert DER (self-signed: same cert).
      */
-    SHA256(cert_der, dlen, root_hash);
-    chain_total = (uint16_t)(2 + 2 + 32 + dlen);
+    SHA384(cert_der, dlen, root_hash);
+    chain_total = (uint16_t)(2 + 2 + 48 + dlen);
     p = g_crypto.chain;
     memcpy(p, &chain_total, 2);   p += 2;
     memset(p, 0, 2);               p += 2;
-    memcpy(p, root_hash, 32);     p += 32;
+    memcpy(p, root_hash, 48);     p += 48;
     memcpy(p, cert_der, dlen);
     g_crypto.chain_len = chain_total;
 
-    /* chain_hash = SHA-256 of the entire CertChain structure */
-    SHA256(g_crypto.chain, g_crypto.chain_len, g_crypto.chain_hash);
+    /* chain_hash = SHA-384 of the entire CertChain structure */
+    SHA384(g_crypto.chain, g_crypto.chain_len, g_crypto.chain_hash);
 
     LOG("doe-emu: crypto init ok, chain=%zu bytes", g_crypto.chain_len);
     return 0;
@@ -359,7 +405,8 @@ static void spdm_handle(uint8_t doe_type)
     case SPDM_GET_CAPS: {
         transcript_append(req, req_bytes);
 
-        uint32_t flags = SPDM_CAP_CERT | SPDM_CAP_CHAL | SPDM_CAP_MEAS_SIG;
+        uint32_t flags = SPDM_CAP_CERT | SPDM_CAP_CHAL | SPDM_CAP_MEAS_SIG |
+                         SPDM_CAP_KEY_EX | SPDM_CAP_ENCRYPT | SPDM_CAP_MAC;
         int bytes;
 
         memset(rsp, 0, 20);
@@ -389,14 +436,14 @@ static void spdm_handle(uint8_t doe_type)
     case SPDM_NEG_ALGOS: {
         transcript_append(req, req_bytes);
 
-        uint32_t asym = SPDM_ASYM_ECDSA_P256;
-        uint32_t hash = SPDM_HASH_SHA256;
-        uint32_t meas_hash = SPDM_HASH_SHA256;
+        uint32_t asym = SPDM_ASYM_ECDSA_P384;
+        uint32_t hash = SPDM_HASH_SHA384;
+        uint32_t meas_hash = SPDM_HASH_SHA384;
         uint8_t  num_req_structs = (req_bytes >= 3) ? req[2] : 0;
         uint16_t len;
         int bytes;
 
-        memset(rsp, 0, 44);
+        memset(rsp, 0, 48);
         rsp[0] = ver;
         rsp[1] = SPDM_RSP_ALGOS;
         rsp[3] = 0;
@@ -407,23 +454,29 @@ static void spdm_handle(uint8_t doe_type)
             memcpy(rsp +  8, &meas_hash, 4);
             memcpy(rsp + 12, &asym,      4);
             memcpy(rsp + 16, &hash,      4);
-            len   = 32;
-            bytes = 32;
+            /* rsp[20..31] = Reserved (12 bytes, zeroed by memset) */
+            /* rsp[32] = ExtAsymCount, rsp[33] = ExtHashCount, rsp[34..35] = Reserved2 (all 0) */
+            len   = 36;
+            bytes = 36;
 
             /*
              * Echo AlgStructs: responder must include one selected
              * algorithm per AlgStruct type the requester listed.
              * Format: AlgType(1) | AlgCount=0x20(1) | AlgSupported(2)
-             * DHE=SECP_256R1(bit3), AEAD=AES-256-GCM(bit1), KeySched=SPDM(bit0)
+             * DHE=secp384r1(bit4), AEAD=AES-256-GCM(bit1), KeySched=SPDM(bit0)
+             * AlgStruct array starts at offset 36 (after ExtAsymCount/
+             * ExtHashCount/Reserved2 at 32-35), not 32.
              */
             if (num_req_structs > 0) {
                 rsp[2] = 3;
-                /* No KEY_EX_CAP → select 0 for DHE/AEAD/KeySchedule */
-                rsp[32] = 0x02; rsp[33] = 0x20; rsp[34] = 0x00; rsp[35] = 0x00;
-                rsp[36] = 0x03; rsp[37] = 0x20; rsp[38] = 0x00; rsp[39] = 0x00;
-                rsp[40] = 0x05; rsp[41] = 0x20; rsp[42] = 0x00; rsp[43] = 0x00;
-                len   = 44;
-                bytes = 44;
+                rsp[36] = 0x02; rsp[37] = 0x20;
+                rsp[38] = SPDM_DHE_SECP384R1 & 0xFF; rsp[39] = SPDM_DHE_SECP384R1 >> 8;
+                rsp[40] = 0x03; rsp[41] = 0x20;
+                rsp[42] = SPDM_AEAD_AES_256_GCM & 0xFF; rsp[43] = SPDM_AEAD_AES_256_GCM >> 8;
+                rsp[44] = 0x05; rsp[45] = 0x20;
+                rsp[46] = SPDM_KEY_SCHED_SPDM & 0xFF; rsp[47] = SPDM_KEY_SCHED_SPDM >> 8;
+                len   = 48;
+                bytes = 48;
             } else {
                 rsp[2] = 0;
             }
@@ -438,7 +491,7 @@ static void spdm_handle(uint8_t doe_type)
 
         transcript_append(rsp, bytes);
         spdm_finish(doe_type, bytes);
-        LOG("doe-emu: SPDM → ALGORITHMS asym=ECDSA_P256 hash=SHA256 structs=%d (ver=0x%02x, %d bytes)",
+        LOG("doe-emu: SPDM → ALGORITHMS asym=ECDSA_P384 hash=SHA384 dhe=secp384r1 structs=%d (ver=0x%02x, %d bytes)",
             rsp[2], ver, bytes);
         break;
     }
@@ -451,8 +504,8 @@ static void spdm_handle(uint8_t doe_type)
         rsp[1] = SPDM_RSP_DIGESTS;
         rsp[2] = 0x01;  /* SlotMask: slot 0 */
         rsp[3] = 0;
-        memcpy(rsp + 4, g_crypto.chain_hash, 32);
-        int bytes = 4 + 32;
+        memcpy(rsp + 4, g_crypto.chain_hash, 48);
+        int bytes = 4 + 48;
 
         transcript_append(rsp, bytes);
         spdm_finish(doe_type, bytes);
@@ -517,27 +570,27 @@ static void spdm_handle(uint8_t doe_type)
          *   [1]   0x03 (CHALLENGE_AUTH)
          *   [2]   SlotIDParam = (SlotID | SlotID<<4)
          *   [3]   SlotMask
-         *   [4..35]  CertChainHash (32)
-         *   [36..67] Nonce (32)
-         *   [68..99] MeasurementSummaryHash (32, zeros = no meas)
-         *   [100..101] OpaqueDataLength = 0
+         *   [4..51]  CertChainHash (48, SHA-384 since chain_hash is computed with SHA-384)
+         *   [52..83] Nonce (32)
+         *   [84..115] MeasurementSummaryHash (32, zeros = no meas)
+         *   [116..117] OpaqueDataLength = 0
          */
         int pos = 0;
         rsp[pos++] = ver;
         rsp[pos++] = SPDM_RSP_CHAL_AUTH;
         rsp[pos++] = req[2] | (uint8_t)(req[2] << 4);
         rsp[pos++] = 0x01;                              /* SlotMask */
-        memcpy(rsp + pos, g_crypto.chain_hash, 32); pos += 32;
+        memcpy(rsp + pos, g_crypto.chain_hash, 48); pos += 48;
         memcpy(rsp + pos, nonce, 32);                pos += 32;
         memset(rsp + pos, 0, 32);                    pos += 32;
         rsp[pos++] = 0; rsp[pos++] = 0;              /* OpaqueDataLength */
 
         /*
-         * Signature = RSA-PKCS1v15-SHA256 over (transcript || rsp[0..pos-1]).
+         * Signature = ECDSA-P384-SHA384 over (transcript || rsp[0..pos-1]).
          * EVP_DigestSign hashes the data internally, so feed both.
          */
         EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
-        if (!mdctx || EVP_DigestSignInit(mdctx, NULL, EVP_sha256(), NULL,
+        if (!mdctx || EVP_DigestSignInit(mdctx, NULL, EVP_sha384(), NULL,
                                          g_crypto.pkey) <= 0) {
             LOG("doe-emu: CHALLENGE sign init failed");
             if (mdctx) EVP_MD_CTX_free(mdctx);
@@ -560,7 +613,7 @@ static void spdm_handle(uint8_t doe_type)
         }
         EVP_MD_CTX_free(mdctx);
 
-        /* Convert DER ECDSA sig → raw (R || S), 32 bytes each for P-256 */
+        /* Convert DER ECDSA sig → raw (R || S), 48 bytes each for P-384 */
         const unsigned char *dp = der;
         ECDSA_SIG *esig = d2i_ECDSA_SIG(NULL, &dp, (long)der_len);
         free(der);
@@ -571,13 +624,13 @@ static void spdm_handle(uint8_t doe_type)
         }
         const BIGNUM *r, *s;
         ECDSA_SIG_get0(esig, &r, &s);
-        BN_bn2binpad(r, rsp + pos,      32);
-        BN_bn2binpad(s, rsp + pos + 32, 32);
+        BN_bn2binpad(r, rsp + pos,      48);
+        BN_bn2binpad(s, rsp + pos + 48, 48);
         ECDSA_SIG_free(esig);
-        pos += 64;  /* ECDSA P-256: R(32) + S(32) */
+        pos += 96;  /* ECDSA P-384: R(48) + S(48) */
 
         spdm_finish(doe_type, pos);
-        LOG("doe-emu: SPDM → CHALLENGE_AUTH (ECDSA P-256, total=%d bytes)", pos);
+        LOG("doe-emu: SPDM → CHALLENGE_AUTH (ECDSA P-384, total=%d bytes)", pos);
         break;
     }
 
