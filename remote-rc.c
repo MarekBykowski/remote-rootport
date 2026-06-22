@@ -7,7 +7,7 @@
 #include <arpa/inet.h>
 #include <linux/pci_regs.h>
 
-#include <linux/avery_doe.h>
+#include <linux/cosim_doe.h>
 
 #define PORT 5555
 
@@ -15,7 +15,7 @@ int main(void)
 {
     int s, c;
     struct sockaddr_in addr;
-    struct avery_pci_config_op op;
+    struct cosim_pci_config_op op;
 
     s = socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0) {

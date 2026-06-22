@@ -130,12 +130,12 @@ def cmd_redirect(mechanism: str):
         link.symlink_to("/lib/ld-linux-x86-64.so.2")
 
     print("Redirect DOE to Remote RC")
-    proc_write("/proc/avery_doe_redirect", "1")
-    print(Path("/proc/avery_doe_redirect").read_text(), end="")
+    proc_write("/proc/cosim_doe_redirect", "1")
+    print(Path("/proc/cosim_doe_redirect").read_text(), end="")
 
     print(f"Set DOE backend: {mechanism}")
-    proc_write("/proc/avery_doe_backend", mechanism)
-    print(Path("/proc/avery_doe_backend").read_text(), end="")
+    proc_write("/proc/cosim_doe_backend", mechanism)
+    print(Path("/proc/cosim_doe_backend").read_text(), end="")
 
     PIPE_DIR.mkdir(parents=True, exist_ok=True)
 

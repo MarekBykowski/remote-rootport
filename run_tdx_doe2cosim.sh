@@ -6,8 +6,8 @@ LOG_DIR=`dirname $0`/logs
 
 run_redirect() {
 	echo "Redirect DOE to Remote RC"
-	echo 1 > /proc/avery_doe_redirect
-	cat /proc/avery_doe_redirect
+	echo 1 > /proc/cosim_doe_redirect
+	cat /proc/cosim_doe_redirect
 
 	mkdir -p "$LOG_DIR"
 	mkdir -p "$PIPE_DIR"
@@ -27,13 +27,13 @@ run_redirect() {
 	export CXL_LOG_FILE="$LOG_DIR/daemon.log"
 	if [[ $1 == netlink ]]; then
 		echo "Using netlink"
-		echo netlink > /proc/avery_doe_backend
-		cat /proc/avery_doe_backend
+		echo netlink > /proc/cosim_doe_backend
+		cat /proc/cosim_doe_backend
 		./daemon-doe-netlink &
 	elif [[ $1 == chardev ]]; then
 		echo "Using chardev"
-		echo chardev > /proc/avery_doe_backend
-		cat /proc/avery_doe_backend
+		echo chardev > /proc/cosim_doe_backend
+		cat /proc/cosim_doe_backend
 		./daemon-doe &
 	fi
 	daemon_pid=$!
@@ -44,7 +44,7 @@ run_redirect() {
 		wait $doe_emu_pid $thin_server_pid $daemon_pid 2>/dev/null
 		if [[ $mechanism == chardev ]]; then
 			echo "Removing DOE redirect"
-			echo 0 > /proc/avery_doe_redirect
+			echo 0 > /proc/cosim_doe_redirect
 		fi
 		echo "Done"
 	}

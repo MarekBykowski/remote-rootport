@@ -8,8 +8,8 @@ run_redirect() {
 	( mkdir -p /lib64; cd /lib64; ln -s /lib/ld-linux-x86-64.so.2 ld-linux-x86-64.so.2 )
 
 	echo "Redirect DOE to Remote RC"
-	echo 1 > /proc/avery_doe_redirect
-	cat /proc/avery_doe_redirect
+	echo 1 > /proc/cosim_doe_redirect
+	cat /proc/cosim_doe_redirect
 
 	./remote-rc &
 	rc_pid=$!
@@ -17,13 +17,13 @@ run_redirect() {
 	echo "Start Remote RC and daemon"
 	if [[ $1 == netlink ]]; then
 		echo "Using netlink"
-		echo netlink > /proc/avery_doe_backend
-		cat /proc/avery_doe_backend
+		echo netlink > /proc/cosim_doe_backend
+		cat /proc/cosim_doe_backend
 		./daemon-doe-netlink &
 	elif [[ $1 == chardev ]]; then
 		echo "Using chardev"
-		echo chardev > /proc/avery_doe_backend
-		cat /proc/avery_doe_backend
+		echo chardev > /proc/cosim_doe_backend
+		cat /proc/cosim_doe_backend
 		./daemon-doe &
 	fi
 	daemon_pid=$!

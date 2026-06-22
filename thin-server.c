@@ -1,9 +1,8 @@
 /*
  * thin-server.c
  *
- * Bridges daemon-doe (TCP :5555) to simv RTL (named pipes).
- * Translates avery_pci_config_op <-> simics_transaction_t.
- * No dependency on cxl_relay.
+ * Bridges daemon-doe (TCP :5555) to cosim/Simics RTL (named pipes).
+ * Translates cosim_pci_config_op <-> simics_transaction_t.
  *
  * Startup order:
  *   1. make simulate  (simv opens the named pipes)
@@ -23,21 +22,17 @@
 #include <arpa/inet.h>
 #include <errno.h>
 
-#include <linux/avery_doe.h>
+#include <linux/cosim_doe.h>
 #include "log.h"
 
 #define SERVER_PORT   5555
 #define PIPE_PATH_ENV "CXL_RELAY_SERVER_PATH"
 #define MAX_PAYLOAD   256
 
-/*
- * DOE mailbox register offsets from pci_regs.h, reused as op type
- * in avery_pci_config_op.type by the kernel doe.c interception layer.
- */
-#define AVERY_OP_WRITE  0x10
-#define AVERY_OP_READ   0x14
+#define COSIM_OP_WRITE  0x10
+#define COSIM_OP_READ   0x14
 
-/* Copied from cxl_relay/cxl_tlp_fifo.h — must match simv DPI-C struct layout */
+/* Must match simv DPI-C struct layout (cxl_relay/cxl_tlp_fifo.h) */
 typedef struct {
     uint32_t packet_number;
     uint32_t packet_type;
@@ -128,7 +123,7 @@ static void xwrite(int fd, const void *buf, size_t len)
 
 static void serve(int client)
 {
-    struct avery_pci_config_op op;
+    struct cosim_pci_config_op op;
     simics_transaction_t req, rsp;
 
     while (1) {
@@ -139,10 +134,10 @@ static void serve(int client)
 
         memset(&req, 0, sizeof(req));
         req.packet_number    = ++seq;
-        req.packet_type      = 1;            /* config transaction */
+        req.packet_type      = 1;
         req.sim_type         = 1;
         req.physical_address = op.offset;
-        req.r0w1             = (op.type == AVERY_OP_WRITE) ? 1 : 0;
+        req.r0w1             = (op.type == COSIM_OP_WRITE) ? 1 : 0;
         req.data_size        = 4;
         memcpy(req.data, &op.value, 4);
 

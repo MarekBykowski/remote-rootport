@@ -99,21 +99,21 @@ run_redirect() {
     ( mkdir -p /lib64; cd /lib64; ln -sf /lib/ld-linux-x86-64.so.2 ld-linux-x86-64.so.2 )
 
     log "Redirect DOE to Remote RC"
-    echo 1 > /proc/avery_doe_redirect
-    log "  avery_doe_redirect=$(cat /proc/avery_doe_redirect)"
+    echo 1 > /proc/cosim_doe_redirect
+    log "  cosim_doe_redirect=$(cat /proc/cosim_doe_redirect)"
 
     log "Set DOE backend: $mechanism"
     if [[ $mechanism == netlink ]]; then
-        echo netlink > /proc/avery_doe_backend
+        echo netlink > /proc/cosim_doe_backend
         local daemon_cmd="./daemon-doe-netlink"
     elif [[ $mechanism == chardev ]]; then
-        echo chardev > /proc/avery_doe_backend
+        echo chardev > /proc/cosim_doe_backend
         local daemon_cmd="./daemon-doe"
     else
         log "Unknown mechanism '$mechanism' — use netlink or chardev"
         exit 1
     fi
-    log "  avery_doe_backend=$(cat /proc/avery_doe_backend)"
+    log "  cosim_doe_backend=$(cat /proc/cosim_doe_backend)"
 
     mkdir -p "$PIPE_DIR"
 

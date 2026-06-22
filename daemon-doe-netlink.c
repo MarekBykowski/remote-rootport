@@ -12,23 +12,23 @@
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
 
-#include <linux/avery_doe.h>
+#include <linux/cosim_doe.h>
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 5555
 
-#define AVERY_FAMILY_NAME "AVERY_DOE"
+#define COSIM_FAMILY_NAME "COSIM_DOE"
 
 enum {
-	AVERY_CMD_UNSPEC,
-	AVERY_CMD_REQUEST,
-	AVERY_CMD_RESPONSE,
-	AVERY_CMD_REGISTER,
+	COSIM_CMD_UNSPEC,
+	COSIM_CMD_REQUEST,
+	COSIM_CMD_RESPONSE,
+	COSIM_CMD_REGISTER,
 };
 
 enum {
-	AVERY_ATTR_UNSPEC,
-	AVERY_ATTR_OP,
+	COSIM_ATTR_UNSPEC,
+	COSIM_ATTR_OP,
 };
 
 static int nl_sock;
@@ -56,7 +56,7 @@ static void nl_register_daemon(void)
 	nlh->nlmsg_seq = 1;
 
 	genl = NLMSG_DATA(nlh);
-	genl->cmd = AVERY_CMD_REGISTER;
+	genl->cmd = COSIM_CMD_REGISTER;
 	genl->version = 1;
 
 	sendto(nl_sock, buffer, nlh->nlmsg_len, 0,
@@ -119,10 +119,10 @@ static int nl_get_family_id(void)
 	na = (struct nlattr *)((char *)&req + req.nlh.nlmsg_len);
 	na->nla_type = CTRL_ATTR_FAMILY_NAME;
 
-	int len = strlen(AVERY_FAMILY_NAME) + 1;
+	int len = strlen(COSIM_FAMILY_NAME) + 1;
 	na->nla_len = NLA_HDRLEN + len;
 
-	strcpy((char *)na + NLA_HDRLEN, AVERY_FAMILY_NAME);
+	strcpy((char *)na + NLA_HDRLEN, COSIM_FAMILY_NAME);
 
 	req.nlh.nlmsg_len += NLA_ALIGN(na->nla_len);
 
@@ -159,7 +159,7 @@ static int nl_get_family_id(void)
 }
 
 static void nl_send_response(struct pending_req *req,
-			     struct avery_pci_config_op *op)
+			     struct cosim_pci_config_op *op)
 {
 	char buffer[256];
 
@@ -178,11 +178,11 @@ static void nl_send_response(struct pending_req *req,
 	nlh->nlmsg_seq = req->seq;
 
 	genl = NLMSG_DATA(nlh);
-	genl->cmd = AVERY_CMD_RESPONSE;
+	genl->cmd = COSIM_CMD_RESPONSE;
 	genl->version = 1;
 
 	na = (struct nlattr *)((char *)nlh + nlh->nlmsg_len);
-	na->nla_type = AVERY_ATTR_OP;
+	na->nla_type = COSIM_ATTR_OP;
 	na->nla_len = NLA_HDRLEN + sizeof(*op);
 
 	memcpy((char *)na + NLA_HDRLEN, op, sizeof(*op));
@@ -196,7 +196,7 @@ static void nl_send_response(struct pending_req *req,
 /* ------------------------------------------------------------- */
 
 static int nl_recv_request(struct pending_req *req,
-			   struct avery_pci_config_op *op)
+			   struct cosim_pci_config_op *op)
 {
 	char buffer[4096];
 
@@ -207,7 +207,7 @@ static int nl_recv_request(struct pending_req *req,
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buffer;
 	struct genlmsghdr *genl = NLMSG_DATA(nlh);
 
-	if (genl->cmd != AVERY_CMD_REQUEST)
+	if (genl->cmd != COSIM_CMD_REQUEST)
 	    return -1;
 
 	req->portid = nlh->nlmsg_pid;
@@ -218,7 +218,7 @@ static int nl_recv_request(struct pending_req *req,
 
 	while (attrlen > 0) {
 
-	    if (attr->nla_type == AVERY_ATTR_OP) {
+	    if (attr->nla_type == COSIM_ATTR_OP) {
 		memcpy(op, (char *)attr + NLA_HDRLEN, sizeof(*op));
 		return 0;
 	    }
@@ -239,7 +239,7 @@ int main(void)
 	struct sockaddr_nl addr;
 
 	struct pending_req req;
-	struct avery_pci_config_op op;
+	struct cosim_pci_config_op op;
 
 	sockfd = connect_remote();
 
