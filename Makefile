@@ -14,10 +14,12 @@ CC=gcc
 CFLAGS=-g -Wall -I./include
 PKG=pkg-config --cflags --libs glib-2.0
 
-SRC=remote-rc.c daemon-doe.c daemon-doe-netlink.c thin-server.c doe-emu.c
+SRC=remote-rc.c daemon-doe.c daemon-doe-netlink.c thin-server.c doe-emu.c \
+    daemon-enum.c thin-server-enum.c enum-emu.c
 OBJ=$(SRC:.c=.o)
 #APP=$(patsubst %.c,%,$(SRC))
-APP=remote-rc daemon-doe daemon-doe-netlink thin-server doe-emu
+APP=remote-rc daemon-doe daemon-doe-netlink thin-server doe-emu \
+    daemon-enum thin-server-enum enum-emu
 
 #$@ - output file/target
 #$< - takes only the first item on the dependencies list
@@ -31,11 +33,11 @@ source_files:
 
 scp: $(APP)
 	@ssh -F .ssh_config qr echo qemu reachable
-	scp -F .ssh_config $(APP) run_doe2cosim.sh trace.sh qr:/home/root
+	scp -F .ssh_config $(APP) run_enum.sh trace.sh qr:/home/root
 
 cl:
 	mkdir -p logs
-	scp -F .ssh_config qr:/var/log/doe2cosim/* logs
+	scp -F .ssh_config qr:/var/log/enum2cosim/* logs
 
 %.o: %.c
 	$(call check_defined, SRC)
@@ -51,6 +53,15 @@ thin-server: thin-server.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 doe-emu: doe-emu.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+daemon-enum: daemon-enum.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+thin-server-enum: thin-server-enum.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+enum-emu: enum-emu.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 clean:

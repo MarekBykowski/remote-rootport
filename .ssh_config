@@ -1,0 +1,6 @@
+Host qr
+	HostName 127.0.0.1
+	User root
+	Port 2222
+	StrictHostKeyChecking no
+	UserKnownHostsFile /dev/null
