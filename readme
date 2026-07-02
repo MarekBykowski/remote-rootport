@@ -1,0 +1,13 @@
+kernel bus scanning
+
+```C
+pci_scan_child_bus_extend(bus)              walks the bus
+  for devfn = 0, 8, 0x10 ... (each slot):
+    pci_scan_slot(bus, devfn)               <-- scans ONE slot (all its functions)
+        pci_scan_single_device(bus, devfn)
+            pci_scan_device(bus, devfn)
+                pci_bus_read_dev_vendor_id(bus, devfn, &l, ...)   <-- the presence check
+                    pci_bus_generic_read_dev_vendor_id()
+                        pci_bus_read_config_dword(bus, devfn, PCI_VENDOR_ID, &l)
+                            bus->ops->read()  ==  cosim_enum_read  ->  enum-emu
+```

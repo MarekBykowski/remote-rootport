@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Enum relay path for named pipes shared between thin-server-enum and enum-emu
+# Enum relay path for named pipes shared between thin-server-enum and emu-enum
 PIPE_DIR="${CXL_RELAY_SERVER_PATH:-/tmp/cosim_enum_pipes}"
 LOG_DIR="/var/log/enum2cosim"
 TRIGGER="/proc/cosim_enum_trigger"
 
-# Phase 1: bring up the userspace endpoint (enum-emu + thin-server-enum +
+# Phase 1: bring up the userspace endpoint (emu-enum + thin-server-enum +
 # daemon-enum) and keep it running.  Run this in its own terminal first; it
 # blocks until Ctrl-C, then tears the stack down.  The kernel has not scanned
 # anything yet -- it only does so once "run_enum.sh enum" fires the trigger.
@@ -27,12 +27,12 @@ run_endpoint() {
 	# removal (echo 0 > trigger -> pci_remove_root_bus) may issue config-space
 	# writes that need a live daemon-enum, so the daemons must outlive the
 	# trigger-0 step and be killed only afterwards.
-	echo "Start enum-emu (opens named pipes, replaces simv / remote endpoint)"
-	export CXL_LOG_FILE="$LOG_DIR/enum_emu.log"
-	setsid ./enum-emu &
-	enum_emu_pid=$!
+	echo "Start emu-enum (opens named pipes, replaces simv / remote endpoint)"
+	export CXL_LOG_FILE="$LOG_DIR/emu_enum.log"
+	setsid ./emu-enum &
+	emu_enum_pid=$!
 
-	echo "Start thin-server-enum (creates named pipes, bridges daemon-enum TCP to enum-emu)"
+	echo "Start thin-server-enum (creates named pipes, bridges daemon-enum TCP to emu-enum)"
 	export CXL_LOG_FILE="$LOG_DIR/thin_server_enum.log"
 	setsid ./thin-server-enum &
 	thin_server_pid=$!
@@ -58,7 +58,7 @@ run_endpoint() {
 		echo ""
 		echo "Tearing down: removing virtual bus, then stopping daemons"
 		echo 0 > "$TRIGGER" 2>/dev/null
-		kill "$daemon_pid" "$thin_server_pid" "$enum_emu_pid" 2>/dev/null
+		kill "$daemon_pid" "$thin_server_pid" "$emu_enum_pid" 2>/dev/null
 	}
 	trap endpoint_cleanup EXIT
 	trap 'exit 130' INT TERM
@@ -84,7 +84,7 @@ EOM
 
 # Phase 2: tell the kernel to scan the virtual bus.  Run this in a second
 # terminal after "run_enum.sh endpoint" is up.  Config-space traffic starts
-# here and flows through the endpoint daemons to enum-emu.
+# here and flows through the endpoint daemons to emu-enum.
 run_enum() {
 	if [ ! -e "$TRIGGER" ]; then
 		echo "ERROR: $TRIGGER not found -- is cosim_enum_bus loaded?"
@@ -107,7 +107,7 @@ stop_enum() {
 	echo "trigger = $(cat "$TRIGGER" 2>/dev/null)"
 
 	echo "Stopping enum daemons"
-	pkill -f '\./enum-emu'         2>/dev/null
+	pkill -f '\./emu-enum'         2>/dev/null
 	pkill -f '\./thin-server-enum' 2>/dev/null
 	pkill -f '\./daemon-enum'      2>/dev/null
 	echo "Done"
@@ -117,7 +117,7 @@ stop_enum() {
 if [[ $1 == -h || $1 == --help || -z $1 ]]; then
 	echo "Usage: $0 endpoint | enum | stop"
 	echo ""
-	echo "  ./run_enum.sh endpoint   # Terminal 1: brings up enum-emu + thin-server-enum + daemon-enum,"
+	echo "  ./run_enum.sh endpoint   # Terminal 1: brings up emu-enum + thin-server-enum + daemon-enum,"
 	echo "                           #             holds the terminal alive (Ctrl-C tears it all down)"
 	echo ""
 	echo "  ./run_enum.sh enum       # Terminal 2: echo 1 > $TRIGGER -> kernel scans,"

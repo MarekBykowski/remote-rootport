@@ -15,11 +15,11 @@ CFLAGS=-g -Wall -I./include
 PKG=pkg-config --cflags --libs glib-2.0
 
 SRC=remote-rc.c daemon-doe.c daemon-doe-netlink.c thin-server.c doe-emu.c \
-    daemon-enum.c thin-server-enum.c enum-emu.c
+    daemon-enum.c thin-server-enum.c emu-enum.c
 OBJ=$(SRC:.c=.o)
 #APP=$(patsubst %.c,%,$(SRC))
 APP=remote-rc daemon-doe daemon-doe-netlink thin-server doe-emu \
-    daemon-enum thin-server-enum enum-emu
+    daemon-enum thin-server-enum emu-enum
 
 #$@ - output file/target
 #$< - takes only the first item on the dependencies list
@@ -61,7 +61,7 @@ daemon-enum: daemon-enum.o
 thin-server-enum: thin-server-enum.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-enum-emu: enum-emu.o
+emu-enum: emu-enum.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 clean:

@@ -1,5 +1,5 @@
 /*
- * enum-emu.c
+ * emu-enum.c
  *
  * Standalone PCI config-space emulator.  Sits on the named pipes that
  * thin-server-enum writes to, and answers config-space transactions for a
@@ -10,9 +10,9 @@
  * Replaces the Simics cosim endpoint for testing without a simulator.
  *
  * Usage:
- *   CXL_LOG_FILE=logs/enum_emu.log \
+ *   CXL_LOG_FILE=logs/emu_enum.log \
  *   CXL_RELAY_SERVER_PATH=/tmp/cosim_enum_pipes \
- *   ./enum-emu
+ *   ./emu-enum
  */
 
 #include <stdio.h>
@@ -249,7 +249,7 @@ static int open_pipes(const char *path)
     rep_fd = open(rep, O_RDWR);
     if (rep_fd < 0) { perror("open reply_server_pipe"); return -1; }
 
-    LOG("enum-emu: pipes opened: %s", path);
+    LOG("emu-enum: pipes opened: %s", path);
     return 0;
 }
 
@@ -331,13 +331,13 @@ int main(void)
 
     const char *pipe_path = getenv(PIPE_PATH_ENV);
     if (!pipe_path) {
-        fprintf(stderr, "enum-emu: %s not set\n", PIPE_PATH_ENV);
+        fprintf(stderr, "emu-enum: %s not set\n", PIPE_PATH_ENV);
         log_close();
         return 1;
     }
 
     build_devices();
-    LOG("enum-emu: ready -- dev0 00.0 mem (DID=0x1234), dev1 01.0 CXL (DID=0x1235)");
+    LOG("emu-enum: ready -- dev0 00.0 mem (DID=0x1234), dev1 01.0 CXL (DID=0x1235)");
 
     if (open_pipes(pipe_path) < 0) {
         log_close();
