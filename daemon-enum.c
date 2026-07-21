@@ -24,14 +24,18 @@
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
-#define DEV_PATH    "/dev/cosim_enum_chardev" STR(MINOR)
-#define SERVER_IP   "127.0.0.1"
-#define SERVER_PORT 5556
+#define DEV_PATH        "/dev/cosim_enum_chardev" STR(MINOR)
+#define SERVER_IP_ENV   "CXL_RELAY_SERVER_IP"
+#define SERVER_IP_DEFAULT "127.0.0.1"
+#define SERVER_PORT     5556
 
 static int connect_remote(void)
 {
     int sock;
     struct sockaddr_in addr;
+    const char *server_ip = getenv(SERVER_IP_ENV);
+    if (!server_ip)
+        server_ip = SERVER_IP_DEFAULT;
 
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) { perror("socket"); exit(1); }
@@ -40,14 +44,14 @@ static int connect_remote(void)
     addr.sin_family = AF_INET;
     addr.sin_port   = htons(SERVER_PORT);
 
-    if (inet_pton(AF_INET, SERVER_IP, &addr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, server_ip, &addr.sin_addr) <= 0) {
         perror("inet_pton"); exit(1);
     }
     if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("connect"); exit(1);
     }
 
-    LOG("Connected to thin-server-enum %s:%d", SERVER_IP, SERVER_PORT);
+    LOG("Connected to thin-server-enum %s:%d", server_ip, SERVER_PORT);
     return sock;
 }
 
