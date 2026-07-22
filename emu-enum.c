@@ -27,36 +27,13 @@
 #include "log.h"
 
 #define PIPE_PATH_ENV "CXL_RELAY_SERVER_PATH"
-#define MAX_PAYLOAD   256
 #define CFG_SIZE      4096
 
 /* ------------------------------------------------------------------ */
-/*  simics_transaction_t -- must match thin-server-enum.c              */
+/*  simics_transaction_t + MAX_PAYLOAD -- shared definition            */
 /* ------------------------------------------------------------------ */
 
-typedef struct {
-    uint32_t packet_number;
-    uint32_t packet_type;
-    uint32_t sim_type;
-    uint32_t bus_no;
-    uint32_t dev_no;
-    uint32_t fun_no;
-    uint32_t cfg_type;
-    uint32_t control_status;
-    uint64_t physical_address;
-    uint32_t r0w1;
-    uint32_t data_size;
-    uint8_t  data[MAX_PAYLOAD];
-    uint32_t reg_value;
-    uint32_t fixed_first_size;
-    uint32_t unaligned_value;
-    uint32_t fbe;
-    uint32_t fixed_last_size;
-    uint32_t lbe;
-    uint32_t cmp_status;
-    uint32_t response1;
-    uint32_t response2;
-} simics_transaction_t;
+#include "simics_transaction.h"
 
 /* ------------------------------------------------------------------ */
 /*  Virtual devices                                                    */

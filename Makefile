@@ -64,7 +64,15 @@ thin-server-enum: thin-server-enum.o
 emu-enum: emu-enum.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
+# DPI-C shared library loaded into simv (via -sv_lib libdpicosim). Our own
+# minimal replacement for cxl_relay's libcxltlprelay.so -- see dpi_cosim.c.
+# Build this on the SIM HOST only: it needs VCS's svdpi.h, so VCS_HOME must be
+# set (source val/env/cxl_relay/source.me first). Not part of 'all', since gnr
+# has no VCS.
+libdpicosim.so: dpi_cosim.c
+	gcc -shared -fPIC -I$(VCS_HOME)/include $< -o $@
+
 clean:
-	rm -f *.o *.a $(APP)
+	rm -f *.o *.a *.so $(APP)
 
 .PHONY: all clean secure-copy

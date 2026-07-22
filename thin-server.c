@@ -27,35 +27,12 @@
 
 #define SERVER_PORT   5555
 #define PIPE_PATH_ENV "CXL_RELAY_SERVER_PATH"
-#define MAX_PAYLOAD   256
 
 #define COSIM_OP_WRITE  0x10
 #define COSIM_OP_READ   0x14
 
-/* Must match simv DPI-C struct layout (cxl_relay/cxl_tlp_fifo.h) */
-typedef struct {
-    uint32_t packet_number;
-    uint32_t packet_type;
-    uint32_t sim_type;
-    uint32_t bus_no;
-    uint32_t dev_no;
-    uint32_t fun_no;
-    uint32_t cfg_type;
-    uint32_t control_status;
-    uint64_t physical_address;
-    uint32_t r0w1;
-    uint32_t data_size;
-    uint8_t  data[MAX_PAYLOAD];
-    uint32_t reg_value;
-    uint32_t fixed_first_size;
-    uint32_t unaligned_value;
-    uint32_t fbe;
-    uint32_t fixed_last_size;
-    uint32_t lbe;
-    uint32_t cmp_status;
-    uint32_t response1;
-    uint32_t response2;
-} simics_transaction_t;
+/* simics_transaction_t + MAX_PAYLOAD -- shared definition. */
+#include "simics_transaction.h"
 
 static int req_fd = -1;
 static int rep_fd = -1;

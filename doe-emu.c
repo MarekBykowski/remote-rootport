@@ -25,7 +25,6 @@
 #include "log.h"
 
 #define PIPE_PATH_ENV  "CXL_RELAY_SERVER_PATH"
-#define MAX_PAYLOAD    256
 #define DOE_BUF_DWORDS 68   /* 2 headers + 256/4 payload */
 
 /* DOE register offsets relative to cap base */
@@ -72,30 +71,8 @@
 #define SPDM_HASH_SHA256    (1u << 0)
 #define SPDM_MEAS_DMTF      (1u << 0)
 
-/* simics_transaction_t — must match cxl_relay/cxl_tlp_fifo.h exactly */
-typedef struct {
-    uint32_t packet_number;
-    uint32_t packet_type;
-    uint32_t sim_type;
-    uint32_t bus_no;
-    uint32_t dev_no;
-    uint32_t fun_no;
-    uint32_t cfg_type;
-    uint32_t control_status;
-    uint64_t physical_address;
-    uint32_t r0w1;
-    uint32_t data_size;
-    uint8_t  data[MAX_PAYLOAD];
-    uint32_t reg_value;
-    uint32_t fixed_first_size;
-    uint32_t unaligned_value;
-    uint32_t fbe;
-    uint32_t fixed_last_size;
-    uint32_t lbe;
-    uint32_t cmp_status;
-    uint32_t response1;
-    uint32_t response2;
-} simics_transaction_t;
+/* simics_transaction_t + MAX_PAYLOAD -- shared definition. */
+#include "simics_transaction.h"
 
 /* Supported protocols advertised via DOE Discovery */
 static const struct { uint16_t vid; uint8_t type; } protocols[] = {
