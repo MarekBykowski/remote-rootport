@@ -15,11 +15,11 @@ CFLAGS=-g -Wall -I./include
 PKG=pkg-config --cflags --libs glib-2.0
 
 SRC=remote-rc.c daemon-doe.c daemon-doe-netlink.c thin-server.c doe-emu.c \
-    daemon-enum.c thin-server-enum.c emu-enum.c
+    daemon-enum.c thin-server-enum.c emu-enum.c mmio-enum.c
 OBJ=$(SRC:.c=.o)
 #APP=$(patsubst %.c,%,$(SRC))
 APP=remote-rc daemon-doe daemon-doe-netlink thin-server doe-emu \
-    daemon-enum thin-server-enum emu-enum
+    daemon-enum thin-server-enum emu-enum mmio-enum
 
 #$@ - output file/target
 #$< - takes only the first item on the dependencies list
@@ -62,6 +62,9 @@ thin-server-enum: thin-server-enum.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 emu-enum: emu-enum.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+mmio-enum: mmio-enum.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 # DPI-C shared library loaded into simv (via -sv_lib libdpicosim). Our own

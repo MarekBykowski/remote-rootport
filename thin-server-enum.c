@@ -22,7 +22,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 
-#include <linux/cosim_enum.h>
+#include <linux/cosim_wire.h>
 #include "log.h"
 
 #define SERVER_PORT   5556
@@ -97,36 +97,65 @@ static void xwrite(int fd, const void *buf, size_t len)
 
 static void serve(int client)
 {
-    struct cosim_pci_enum_op op;
+    struct cosim_wire_op op;
     simics_transaction_t req, rsp;
+    uint32_t bus, devfn, size, is_write;
+    uint64_t addr;
+    uint64_t value;
 
     while (1) {
         xrecv(client, &op, sizeof(op));
 
-        LOG("REQ  bus=%u dev=%u fn=%u offset=0x%x size=%u type=%s",
-            op.bus, op.devfn >> 3, op.devfn & 7,
-            op.offset, op.size,
-            op.type == COSIM_ENUM_READ ? "R" : "W");
+        if (op.kind == COSIM_OP_MMIO) {
+            bus      = op.mmio.bus;
+            devfn    = op.mmio.devfn;
+            addr     = op.mmio.addr;
+            size     = op.mmio.size;
+            is_write = (op.mmio.type == COSIM_MMIO_WRITE);
+            value    = op.mmio.value;
+
+            LOG("REQ  MMIO bus=%u dev=%u fn=%u addr=0x%llx size=%u type=%s",
+                bus, devfn >> 3, devfn & 7, (unsigned long long)addr, size,
+                is_write ? "W" : "R");
+        } else {
+            bus      = op.enum_op.bus;
+            devfn    = op.enum_op.devfn;
+            addr     = op.enum_op.offset;
+            size     = op.enum_op.size;
+            is_write = (op.enum_op.type == COSIM_ENUM_WRITE);
+            value    = op.enum_op.value;
+
+            LOG("REQ  CFG  bus=%u dev=%u fn=%u offset=0x%llx size=%u type=%s",
+                bus, devfn >> 3, devfn & 7, (unsigned long long)addr, size,
+                is_write ? "W" : "R");
+        }
 
         memset(&req, 0, sizeof(req));
         req.packet_number    = ++seq;
-        req.packet_type      = 1;           /* config transaction */
+        req.packet_type      = (op.kind == COSIM_OP_MMIO) ? 2 : 1;
         req.sim_type         = 1;
-        req.bus_no           = op.bus;
-        req.dev_no           = op.devfn >> 3;
-        req.fun_no           = op.devfn & 7;
-        req.physical_address = op.offset;
-        req.r0w1             = (op.type == COSIM_ENUM_WRITE) ? 1 : 0;
-        req.data_size        = op.size;
-        memcpy(req.data, &op.value, op.size);
+        req.bus_no           = bus;
+        req.dev_no           = devfn >> 3;
+        req.fun_no           = devfn & 7;
+        req.physical_address = addr;
+        req.r0w1             = is_write ? 1 : 0;
+        req.data_size        = size;
+        memcpy(req.data, &value, size);
 
         xwrite(req_fd, &req, sizeof(req));
         xread (rep_fd, &rsp, sizeof(rsp));
 
-        op.status = (int32_t)rsp.cmp_status;
-        memcpy(&op.value, rsp.data, op.size);
-
-        LOG("RSP  status=%d value=0x%x", op.status, op.value);
+        if (op.kind == COSIM_OP_MMIO) {
+            op.mmio.status = (int32_t)rsp.cmp_status;
+            op.mmio.value  = 0;
+            memcpy(&op.mmio.value, rsp.data, size);
+            LOG("RSP  status=%d value=0x%llx",
+                op.mmio.status, (unsigned long long)op.mmio.value);
+        } else {
+            op.enum_op.status = (int32_t)rsp.cmp_status;
+            memcpy(&op.enum_op.value, rsp.data, size);
+            LOG("RSP  status=%d value=0x%x", op.enum_op.status, op.enum_op.value);
+        }
 
         xsend(client, &op, sizeof(op));
     }

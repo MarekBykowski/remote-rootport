@@ -16,7 +16,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
-#include <linux/cosim_enum.h>
+#include <linux/cosim_wire.h>
 #include "log.h"
 
 #define MINOR 0
@@ -79,7 +79,7 @@ int main(void)
 {
     int devfd, sockfd;
     struct pollfd pfd;
-    struct cosim_pci_enum_op op;
+    struct cosim_wire_op op;
 
     log_init(getenv("CXL_LOG_FILE"));
 
@@ -104,14 +104,26 @@ int main(void)
             ssize_t n = read(devfd, &op, sizeof(op));
             if (n <= 0) { perror("read"); break; }
 
-            LOG("REQ: bus=%u devfn=%u offset=0x%x size=%u type=%s",
-                op.bus, op.devfn, op.offset, op.size,
-                op.type == COSIM_ENUM_READ ? "R" : "W");
+            if (op.kind == COSIM_OP_MMIO)
+                LOG("REQ: MMIO bus=%u devfn=%u addr=0x%llx size=%u type=%s",
+                    op.mmio.bus, op.mmio.devfn,
+                    (unsigned long long)op.mmio.addr, op.mmio.size,
+                    op.mmio.type == COSIM_MMIO_READ ? "R" : "W");
+            else
+                LOG("REQ: CFG bus=%u devfn=%u offset=0x%x size=%u type=%s",
+                    op.enum_op.bus, op.enum_op.devfn, op.enum_op.offset,
+                    op.enum_op.size,
+                    op.enum_op.type == COSIM_ENUM_READ ? "R" : "W");
 
             send_all(sockfd, &op, sizeof(op));
             recv_all(sockfd, &op, sizeof(op));
 
-            LOG("RSP: status=%d value=0x%x", op.status, op.value);
+            if (op.kind == COSIM_OP_MMIO)
+                LOG("RSP: status=%d value=0x%llx",
+                    op.mmio.status, (unsigned long long)op.mmio.value);
+            else
+                LOG("RSP: status=%d value=0x%x",
+                    op.enum_op.status, op.enum_op.value);
 
             if (write(devfd, &op, sizeof(op)) < 0) {
                 perror("write"); break;
