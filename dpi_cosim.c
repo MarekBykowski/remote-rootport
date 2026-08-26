@@ -5,8 +5,24 @@
  * (simv) and the cosim enum named pipes. A drop-in replacement for
  * cxl_relay's libcxltlprelay.so for the pcie_txn_cosim_test / enum flow.
  *
- * simv only holds the SV-side DPI *import declarations* (in EipPcieTBSeqPkg.sv);
- * the function bodies come from the .so VCS loads at runtime via -sv_lib. This
+ * simv only holds the SV-side DPI *import declarations*
+ *   EipPcieTBSeqPkg.sv -> file
+ *     package pi5_simics_dpi_pkg; -> package
+ *       import "DPI-C" function int  -> a DPI import
+ *          open_server_fifo_path(input string cxl_relay_server_path);
+ *       ...
+ *
+ * simv, in eip_cosim_enum_seq.svh, uses them:
+ *   open the pipes once, in body() (eip_cosim_enum_seq.svh)
+ *      ret = pi5_simics_dpi_pkg::open_server_fifo_path(cxl_relay_server_path);
+ *   relay loop, in runPort() -> request -> drive into the RTL -> response
+ *      do begin
+ *         automatic bit [7:0] cfg_data_temp[4];
+ *         pi5_simics_dpi_pkg::simics_dpi_request(req);   // block-read one request
+ *         ...
+ *
+ *
+ * The function bodies come from the .so VCS loads at runtime via -sv_lib. This
  * file supplies exactly the four functions that package imports, plus the
  * matching simics_transaction_t layout -- nothing else from cxl_relay is
  * needed (no named_pipe.c / cxl_tlp_fifo.c / pcie_tlp_pkt_lib.c / dml_*).
