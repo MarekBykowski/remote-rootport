@@ -8,9 +8,11 @@
  *   - config space: same plain memory-controller header as emu-enum.c's
  *     device 0, so run_enum.sh's existing enumeration checks still pass
  *     unmodified when this is swapped in for emu-enum.
- *   - MMIO: a flat backing buffer, addressed directly by the physical
- *     address the request carries (no relation to any real host resource
- *     assignment needed -- cosim_mmio_test issues addresses by hand).
+ *   - MMIO: a flat backing buffer, addressed BAR-relative -- the incoming
+ *     physical address is translated against the BAR0 base this device was
+ *     actually assigned (observed in its own cfg[] during the kernel's BAR
+ *     sizing/assignment config writes), the same way a real device's
+ *     address decoder works against its own programmed BAR register.
  *
  * Replaces the Simics cosim endpoint for testing the MMIO relay path
  * (kernel -> chardev -> daemon-enum -> thin-server-enum -> mmio-enum)
@@ -112,39 +114,89 @@ static uint32_t cfg_read(uint32_t offset, uint32_t size)
     return val;
 }
 
+/*
+ * BAR0 low dword: bits below the BAR's decode size are hardwired in real
+ * hardware, not storage -- that's what makes both size probing (write
+ * 0xFFFFFFFF, read back a size-shaped mask) and real address assignment
+ * work. A plain memcpy store, as this emulator did before, reads back
+ * whatever raw bytes were written: probing with 0xFFFFFFFF then reads
+ * back 0xFFFFFFFF verbatim (bit0=1 looks like an I/O BAR, not memory),
+ * so the PCI core can't compute a sane size and leaves the BAR
+ * <unassigned> -- independent of, and easily mistaken for, cosim_enum_bus's
+ * separate MMIO-window-reservation failure mode.
+ */
+#define BAR0_SIZE_MASK_LOW   (~((uint32_t)MMIO_SIZE - 1) & 0xfffffff0u)
+#define BAR0_FIXED_FLAGS_LOW 0x4u   /* memory space, 64-bit, non-prefetchable */
+
 static void cfg_write(uint32_t offset, uint32_t size, uint32_t val)
 {
     if (offset + size > CFG_SIZE)
         return;
 
+    if (offset == 0x10 && size == 4)
+        val = (val & BAR0_SIZE_MASK_LOW) | BAR0_FIXED_FLAGS_LOW;
+
     memcpy(&cfg[offset], &val, size);
+}
+
+/*
+ * bar0_base - the BAR0 address the kernel actually assigned this device.
+ *
+ * The kernel's BAR-sizing/assignment writes (probe with 0xFFFFFFFF, read
+ * back the size, then write the real address) are ordinary config writes,
+ * so they flow through cfg_write() like any other -- by the time a request
+ * with packet_type==2 arrives, cfg[0x10..0x17] already holds the real
+ * assigned address. Low 4 bits of the low dword are BAR flags (memory
+ * space / type / prefetchable), not part of the address.
+ */
+static uint64_t bar0_base(void)
+{
+    uint32_t lo, hi;
+
+    memcpy(&lo, &cfg[0x10], 4);
+    memcpy(&hi, &cfg[0x14], 4);
+    return ((uint64_t)hi << 32) | (lo & ~0xfULL);
 }
 
 /*
  * mem_read/mem_write - answer packet_type==2 (MMIO) transactions.
  *
- * The physical address is used directly as an index into the backing
- * buffer: cosim_mmio_test issues addresses by hand (it does not go through
- * a real readl()/writel() on an assigned BAR), so there is no host resource
- * assignment to translate here.
+ * addr is the full CPU physical address a real readl()/writel() would use
+ * (cosim_mmio_test computes it from the device's actual pci_resource_start()).
+ * Translate it against the BAR0 base this device was actually assigned
+ * before indexing into the backing buffer -- exactly what a real device's
+ * address decoder does against its own programmed BAR register.
  */
 static uint64_t mem_read(uint64_t addr, uint32_t size)
 {
+    uint64_t base = bar0_base();
+    uint64_t off;
     uint64_t val = 0;
 
-    if (addr + size > MMIO_SIZE || size > sizeof(val))
+    if (addr < base)
         return ~0ull;
 
-    memcpy(&val, &mmio[addr], size);
+    off = addr - base;
+    if (off + size > MMIO_SIZE || size > sizeof(val))
+        return ~0ull;
+
+    memcpy(&val, &mmio[off], size);
     return val;
 }
 
 static void mem_write(uint64_t addr, uint32_t size, uint64_t val)
 {
-    if (addr + size > MMIO_SIZE || size > sizeof(val))
+    uint64_t base = bar0_base();
+    uint64_t off;
+
+    if (addr < base)
         return;
 
-    memcpy(&mmio[addr], &val, size);
+    off = addr - base;
+    if (off + size > MMIO_SIZE || size > sizeof(val))
+        return;
+
+    memcpy(&mmio[off], &val, size);
 }
 
 /* ------------------------------------------------------------------ */
